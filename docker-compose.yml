@@ -1,9 +1,11 @@
 version: '3.8'
+
 services:
   pipeline:
     build: .
-    command: tail -f /dev/null
     volumes:
+      # Syncs your local project folder to the container
       - .:/app
     ports:
+      # Exposes Jupyter Notebook to your local browser
       - "8888:8888"
