@@ -425,7 +425,7 @@ def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
     Parameters
     ----------
     df       : cleaned DataFrame (output of clean_data)
-    save_csv : if True, saves ProjectData/cleaned_gas_monitoring.csv
+    save_csv : if True, saves data/cleaned_gas_monitoring.csv # NOTE!!
     """
     print('=== Final Cleaned Dataset ===')
     print(f'Shape         : {df.shape}')
@@ -439,6 +439,6 @@ def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
     if save_csv:
         import os
         os.makedirs('data', exist_ok=True)
-        out_path = 'ProjectData/cleaned_gas_monitoring.csv'
+        out_path = 'data/cleaned_gas_monitoring.csv'
         df.to_csv(out_path, index=False)
         print(f'\nCleaned dataset saved to {out_path}')
