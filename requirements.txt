@@ -1,8 +1,9 @@
 pandas
 numpy
-scikit-learn
 matplotlib
 seaborn
-jupyter
+scipy
+scikit-learn
 xgboost
 lightgbm
+jupyter
