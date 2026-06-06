@@ -1,5 +1,5 @@
 """
-eda.py
+EDAPython.py
 ------
 EDA functions for the ElderGuard Analytics gas monitoring dataset.
 Import this module in eda.ipynb and call each step function in order.
@@ -112,6 +112,7 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     - Normalise Activity Level and HVAC Operation Mode labels
     - Replace temperature outliers (outside 10–40 C) with column median
     - Impute missing numeric values with median
+    - Fix negative values in Humidity and CO_GasSensor (sensor faults)
     - Fill missing Ambient Light Level with mode
 
     Returns
@@ -154,6 +155,18 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
         median_val = df[col].median()
         df[col].fillna(median_val, inplace=True)
         print(f'  Imputed {col} with median = {median_val:.2f}')
+
+    # 5a. Fix negative sensor values — physically impossible for Humidity and CO2 sensors.
+    #     Humidity must be 0–100 (%RH); CO2 sensors cannot read below 0 ppm.
+    #     Negative readings are likely sensor faults; replace with column median.
+    for col in ['Humidity', 'CO_GasSensor']:
+        neg_mask = df[col] < 0
+        if neg_mask.sum() > 0:
+            valid_median = df.loc[df[col] >= 0, col].median()
+            print(f'  Negative values in {col}: {neg_mask.sum()} rows — replaced with median = {valid_median:.2f}')
+            df.loc[neg_mask, col] = valid_median
+        else:
+            print(f'  No negative values found in {col}')
 
     # 5. Fill Ambient Light Level with mode
     light_mode = df['Ambient Light Level'].mode()[0]
@@ -209,6 +222,19 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
     desc['kurtosis'] = df[NUMERIC_COLS].kurt().round(3)
     print(desc.round(3).to_string())
 
+    # Skewness/Kurtosis interpretation
+    # Skew > 0.5 = right-skewed (use log1p transform for linear models)
+    # Skew < -0.5 = left-skewed
+    # Kurt > 1 = leptokurtic = more extreme outliers than normal
+    print('\n=== Skewness & Kurtosis Notes ===')
+    for col in NUMERIC_COLS:
+        skew = df[col].skew()
+        kurt = df[col].kurt()
+        if abs(skew) >= 0.5:
+            print(f'  {col}: skew={skew:.2f} — consider log1p transform for linear models')
+        if kurt > 1:
+            print(f'  {col}: kurt={kurt:.2f} — heavy tails, more outliers than normal distribution')
+
     # Numeric distributions
     fig, axes = plt.subplots(3, 3, figsize=(16, 12))
     axes = axes.flatten()
@@ -217,8 +243,12 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         sns.histplot(df[col], bins=50, kde=True, ax=ax, color='#4C72B0', alpha=0.7)
         ax.set_title(col, fontsize=11, fontweight='bold')
         ax.set_xlabel('')
-        ax.annotate(f'skew={df[col].skew():.2f}', xy=(0.97, 0.92),
-                    xycoords='axes fraction', ha='right', fontsize=9, color='#c0392b')
+        skew_val = df[col].skew()
+        kurt_val = df[col].kurt()
+        colour = '#c0392b' if abs(skew_val) >= 0.5 else '#27ae60'
+        ax.annotate(f'skew={skew_val:.2f}  kurt={kurt_val:.2f}',
+                    xy=(0.97, 0.92), xycoords='axes fraction',
+                    ha='right', fontsize=8, color=colour)
     plt.suptitle('Distribution of Numeric Sensor Features (post-cleaning)',
                  fontsize=14, fontweight='bold', y=1.01)
     plt.tight_layout()
@@ -466,3 +496,13 @@ def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
         out_path = 'data/cleaned_gas_monitoring.csv'
         df.to_csv(out_path, index=False)
         print(f'\nCleaned dataset saved to {out_path}')
+
+    # Modelling pipeline reminder
+    print('\n=== Next Step: Modelling Pipeline ===')
+    print('1. Encode features    : ordinal (Time of Day, Ambient Light), one-hot (HVAC)')
+    print('2. Transform skewed   : log1p on CO_GasSensor for linear models')
+    print('3. Split data         : GroupShuffleSplit by Session ID (80/20)')
+    print('4. Handle imbalance   : class_weight="balanced" OR SMOTE on train set only')
+    print('5. Cross-validate     : StratifiedGroupKFold (5 folds)')
+    print('6. Train models       : Logistic Regression → Random Forest → XGBoost')
+    print('7. Evaluate           : macro F1-score (not accuracy — classes are imbalanced)')
