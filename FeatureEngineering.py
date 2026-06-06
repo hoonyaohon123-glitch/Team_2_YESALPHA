@@ -103,13 +103,11 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['Target_Activity'] = df['Activity Level'].map(activity_map)
     
     # Ambient Light Ordinal Encoding
-    light_map = {'very_dim': 0, 'dim': 1, 'normal': 2, 'bright': 3, 'very_bright': 4}
+    light_map = {'very_dim': 0, 'dim': 1, 'moderate': 2, 'bright': 3, 'very_bright': 4}
     df['Ambient_Light_Encoded'] = df['Ambient Light Level'].map(light_map).fillna(2)
 
     # One-Hot Encoding for Nominal Categories
     df = pd.get_dummies(df, columns=['HVAC Operation Mode', 'Time of Day'], drop_first=True)
-
-    # Drop the original raw text columns
     df = df.drop(columns=['Activity Level', 'Ambient Light Level'])
 
     return df

@@ -164,6 +164,30 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     print('\nCleaned Activity Level distribution:')
     print(df['Activity Level'].value_counts().to_string())
 
+    # 6. Remove duplicates if any
+    dup_count = df.duplicated().sum()
+    if dup_count > 0:
+        df = df.drop_duplicates()
+        print(f'\nRemoved {dup_count} duplicate rows.')
+    
+    # 7. Handling Null Values
+    numerical_features = ['Temperature', 'Humidity', 'CO2_InfraredSensor', 'CO2_ElectroChemicalSensor', 'MetalOxideSensor_Unit1', 'MetalOxideSensor_Unit2', 'MetalOxideSensor_Unit3', 'MetalOxideSensor_Unit4', 'CO_GasSensor'] # session id not included as it is not a feature for modeling
+    categorical_features = ['Time of Day', 'HVAC Operation Mode', 'Ambient Light Level', 'Activity Level']
+    print("\n -> Imputing missing values...")
+
+    for col in ['Humidity', 'MetalOxideSensor_Unit2', 'CO_GasSensor']:
+        if col in numerical_features:
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+
+        if 'Ambient Light Level' in categorical_features:
+            df['Ambient Light Level'] = df.groupby('Time of Day')['Ambient Light Level'].transform(
+                lambda x: x.fillna(x.mode()[0])
+            )
+    print("\nMissing values after imputation:")
+    print(df[numerical_features + categorical_features].isnull().sum())
+
+
     return df
 
 
