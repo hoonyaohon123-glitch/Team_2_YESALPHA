@@ -1,11 +1,5 @@
 """
-EDAPython.py
-------
-EDA functions for the ElderGuard Analytics gas monitoring dataset.
-Import this module in eda.ipynb and call each step function in order.
-
-Usage in notebook:
-    from eda import *
+Some of the funcitons that are used in the Jupyter Notebook:
     df_raw = load_data()
     check_quality(df_raw)
     df = clean_data(df_raw)
