@@ -1,0 +1,618 @@
+"""
+eda.py
+------
+EDA functions for the ElderGuard Analytics gas monitoring dataset.
+Import this module in eda.ipynb and call each step function in order.
+
+Usage in notebook:
+    from eda import *
+    df_raw = load_data()
+    check_quality(df_raw)
+    df = clean_data(df_raw)
+    univariate_analysis(df)
+    bivariate_analysis(df)
+    correlation_analysis(df)
+    session_analysis(df)
+    summary(df)
+"""
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import sqlite3
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+# ── Global aesthetics ─────────────────────────────────────────────────────────
+sns.set_theme(style='whitegrid', palette='muted', font_scale=1.1)
+plt.rcParams['figure.dpi'] = 110
+
+PALETTE = {
+    'Low Activity':      '#4C72B0',
+    'Moderate Activity': '#DD8452',
+    'High Activity':     '#55A868',
+}
+ACTIVITY_ORDER = ['Low Activity', 'Moderate Activity', 'High Activity']
+NUMERIC_COLS = [
+    'Temperature', 'Humidity', 'CO2_InfraredSensor', 'CO2_ElectroChemicalSensor',
+    'MetalOxideSensor_Unit1', 'MetalOxideSensor_Unit2', 'MetalOxideSensor_Unit3',
+    'MetalOxideSensor_Unit4', 'CO_GasSensor',
+]
+DB_PATH = 'ProjectData/gas_monitoring.db'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1 — Load data
+# ─────────────────────────────────────────────────────────────────────────────
+def load_data(db_path: str = DB_PATH) -> pd.DataFrame:
+    """
+    Load the gas_monitoring table from the SQLite database.
+
+    Returns
+    -------
+    df_raw : pd.DataFrame
+        Raw, unmodified dataset.
+    """
+    conn = sqlite3.connect(db_path)
+    df_raw = pd.read_sql('SELECT * FROM gas_monitoring', conn)
+    conn.close()
+
+    print(f'Shape        : {df_raw.shape}')
+    print(f'Columns      : {list(df_raw.columns)}')
+    print(f'Memory usage : {df_raw.memory_usage(deep=True).sum() / 1e6:.2f} MB')
+    return df_raw
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2 — Data quality assessment
+# ─────────────────────────────────────────────────────────────────────────────
+def check_quality(df: pd.DataFrame) -> None:
+    """
+    Print and visualise data quality issues:
+    missing values, duplicates, and label noise in categorical columns.
+    """
+    # ── Missing values ──
+    missing = df.isnull().sum()
+    missing_pct = (missing / len(df) * 100).round(2)
+    missing_df = pd.DataFrame({'Missing Count': missing, 'Missing %': missing_pct})
+    missing_df = missing_df[missing_df['Missing Count'] > 0]
+
+    print('=== Missing Values ===')
+    print(missing_df.to_string())
+    print(f'\n=== Duplicate Rows ===')
+    print(f'  {df.duplicated().sum()} duplicate rows found')
+
+    # ── Plot missing values ──
+    if not missing_df.empty:
+        fig, ax = plt.subplots(figsize=(9, 4))
+        missing_df['Missing %'].sort_values().plot(kind='barh', ax=ax, color='#c0392b')
+        ax.set_xlabel('Missing (%)')
+        ax.set_title('Missing Value Rate per Column')
+        for p in ax.patches:
+            ax.annotate(f'{p.get_width():.1f}%', (p.get_width() + 0.3, p.get_y() + 0.3))
+        plt.tight_layout()
+        plt.show()
+
+    # ── Label noise ──
+    print('\n=== Raw Activity Level values ===')
+    print(df['Activity Level'].value_counts().to_string())
+    print('\n=== Raw HVAC Operation Mode values ===')
+    print(df['HVAC Operation Mode'].value_counts().to_string())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — Data cleaning
+# ─────────────────────────────────────────────────────────────────────────────
+def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clean and standardise the raw dataset:
+    - Normalise Activity Level and HVAC Operation Mode labels
+    - Replace temperature outliers (outside 10–40 C) with column median
+    - Impute missing numeric values with median
+    - Fill missing Ambient Light Level with mode
+
+    Returns
+    -------
+    df : pd.DataFrame
+        Cleaned dataset.
+    """
+    df = df_raw.copy()
+
+    # 1. Standardise Activity Level labels
+    activity_map = {
+        'Low Activity':      'Low Activity',
+        'Low_Activity':      'Low Activity',
+        'LowActivity':       'Low Activity',
+        'Moderate Activity': 'Moderate Activity',
+        'ModerateActivity':  'Moderate Activity',
+        'High Activity':     'High Activity',
+    }
+    df['Activity Level'] = df['Activity Level'].map(activity_map)
+
+    # 2. Standardise HVAC labels → lowercase + underscore
+    df['HVAC Operation Mode'] = (
+        df['HVAC Operation Mode']
+        .str.strip()
+        .str.lower()
+        .str.replace(r'[\s\-]+', '_', regex=True)
+    )
+
+    # 3. Replace temperature outliers with median of valid readings
+    TEMP_LOW, TEMP_HIGH = 10.0, 40.0
+    temp_mask = (df['Temperature'] < TEMP_LOW) | (df['Temperature'] > TEMP_HIGH)
+    temp_median = df.loc[~temp_mask, 'Temperature'].median()
+    print(f'Temperature outliers : {temp_mask.sum()} rows  '
+          f'(range before: {df_raw["Temperature"].min():.1f} – {df_raw["Temperature"].max():.1f} C)')
+    df.loc[temp_mask, 'Temperature'] = temp_median
+    print(f'  Replaced with median: {temp_median:.2f} C')
+
+    # 4. Impute missing numeric columns with median
+    for col in ['Humidity', 'MetalOxideSensor_Unit2', 'CO_GasSensor']:
+        median_val = df[col].median()
+        df[col].fillna(median_val, inplace=True)
+        print(f'  Imputed {col} with median = {median_val:.2f}')
+
+    # 5a. Fix negative sensor values — physically impossible for Humidity and CO2 sensors.
+    #     Humidity must be 0–100 (%RH); CO2 sensors cannot read below 0 ppm.
+    #     Negative readings are likely sensor faults; replace with column median.
+    for col in ['Humidity', 'CO_GasSensor']:
+        neg_mask = df[col] < 0
+        if neg_mask.sum() > 0:
+            valid_median = df.loc[df[col] >= 0, col].median()
+            print(f'  Negative values in {col}: {neg_mask.sum()} rows — replaced with median = {valid_median:.2f}')
+            df.loc[neg_mask, col] = valid_median
+        else:
+            print(f'  No negative values found in {col}')
+
+    # 5. Fill Ambient Light Level with mode
+    light_mode = df['Ambient Light Level'].mode()[0]
+    df['Ambient Light Level'].fillna(light_mode, inplace=True)
+    print(f'  Imputed Ambient Light Level with mode = "{light_mode}"')
+
+    print(f'\nRemaining nulls : {df.isnull().sum().sum()}')
+    print('\nCleaned Activity Level distribution:')
+    print(df['Activity Level'].value_counts().to_string())
+
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4 — Univariate analysis
+# ─────────────────────────────────────────────────────────────────────────────
+def _interpret_skew_kurt(col: str, skew: float, kurt: float) -> str:
+    """
+    Return a short plain-English interpretation of skewness and kurtosis
+    for a sensor column, plus a recommendation for normalisation if needed.
+
+    Skewness rules of thumb:
+        |skew| < 0.5   → approximately symmetric
+        0.5 ≤ |skew| < 1 → moderately skewed
+        |skew| ≥ 1     → highly skewed
+
+    Kurtosis (excess / Fisher):
+        ≈ 0   → normal-like tail weight (mesokurtic)
+        > 1   → heavier tails / sharper peak (leptokurtic) — more extreme outliers
+        < -1  → lighter tails / flatter peak (platykurtic)
+    """
+    # Skewness direction
+    if abs(skew) < 0.5:
+        skew_desc = 'approximately symmetric'
+        fix = 'No transformation needed — distribution is close to normal.'
+    elif skew >= 0.5:
+        skew_desc = f'right-skewed (skew={skew:.2f}) — most readings are low with occasional high spikes'
+        fix = ('Apply log1p or square-root transform to compress the long right tail '
+               'before feeding into distance-based or linear models.')
+    else:
+        skew_desc = f'left-skewed (skew={skew:.2f}) — most readings are high with occasional low dips'
+        fix = ('Consider a reflection + log transform (log(max+1 - x)) to bring '
+               'the left tail closer to normal for linear/distance-based models.')
+
+    # Kurtosis interpretation
+    if abs(kurt) < 1:
+        kurt_desc = f'normal-like tail weight (kurtosis={kurt:.2f})'
+    elif kurt > 1:
+        kurt_desc = (f'leptokurtic (kurtosis={kurt:.2f}) — sharp peak with heavy tails; '
+                     'outliers are more frequent than a normal distribution would predict')
+    else:
+        kurt_desc = (f'platykurtic (kurtosis={kurt:.2f}) — flat peak with light tails; '
+                     'readings are more uniformly spread than a normal distribution')
+
+    return (f'  {col}:\n'
+            f'    Distribution : {skew_desc}\n'
+            f'    Tail weight  : {kurt_desc}\n'
+            f'    Action       : {fix}')
+
+
+def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Print summary statistics and plot distributions for all features.
+
+    Insight — why this matters:
+        Understanding each feature's shape before modelling helps us:
+        1. Detect sensor anomalies (e.g. heavy-tailed CO_GasSensor indicates
+           rare but important spikes — cooking events, ventilation failures).
+        2. Decide whether to apply transformations for models that assume
+           normality (Logistic Regression, SVM, KNN).
+        3. Tree-based models (Random Forest, XGBoost) are invariant to
+           monotonic transforms, so skewness matters less for them.
+
+    Returns
+    -------
+    desc : pd.DataFrame
+        Descriptive statistics table with skewness and kurtosis.
+    """
+    # ── Summary stats ──────────────────────────────────────────────────────────
+    desc = df[NUMERIC_COLS].describe().T
+    desc['skewness'] = df[NUMERIC_COLS].skew().round(3)
+    desc['kurtosis'] = df[NUMERIC_COLS].kurt().round(3)
+    print('=== Descriptive Statistics (with skewness & kurtosis) ===')
+    print(desc.round(3).to_string())
+
+    # ── Skewness / Kurtosis interpretations ────────────────────────────────────
+    print('\n=== Skewness & Kurtosis Interpretation ===')
+    print('(Guides whether a feature needs transformation before modelling)\n')
+    for col in NUMERIC_COLS:
+        print(_interpret_skew_kurt(col, df[col].skew(), df[col].kurt()))
+        print()
+
+    # ── Numeric distributions ──────────────────────────────────────────────────
+    fig, axes = plt.subplots(3, 3, figsize=(16, 12))
+    axes = axes.flatten()
+    for i, col in enumerate(NUMERIC_COLS):
+        ax = axes[i]
+        sns.histplot(df[col], bins=50, kde=True, ax=ax, color='#4C72B0', alpha=0.7)
+        ax.set_title(col, fontsize=11, fontweight='bold')
+        ax.set_xlabel('')
+        skew_val = df[col].skew()
+        kurt_val = df[col].kurt()
+        # Colour-code the annotation: red if transformation is recommended
+        colour = '#c0392b' if abs(skew_val) >= 0.5 else '#27ae60'
+        ax.annotate(f'skew={skew_val:.2f}  kurt={kurt_val:.2f}',
+                    xy=(0.97, 0.92), xycoords='axes fraction',
+                    ha='right', fontsize=8, color=colour)
+    plt.suptitle(
+        'Distribution of Numeric Sensor Features (post-cleaning)\n'
+        'Red annotation = skew ≥ 0.5 → consider log/sqrt transform for linear models',
+        fontsize=13, fontweight='bold', y=1.02,
+    )
+    plt.tight_layout()
+    plt.show()
+
+    # ── Categorical distributions ──────────────────────────────────────────────
+    cat_cols = ['Activity Level', 'Time of Day', 'HVAC Operation Mode', 'Ambient Light Level']
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    for i, col in enumerate(cat_cols):
+        ax = axes[i]
+        vc = df[col].value_counts()
+        vc.plot(kind='bar', ax=ax, color=sns.color_palette('muted', len(vc)), edgecolor='white')
+        ax.set_title(col, fontweight='bold')
+        ax.set_xlabel('')
+        ax.tick_params(axis='x', rotation=30)
+        for p in ax.patches:
+            ax.annotate(f'{int(p.get_height())}',
+                        (p.get_x() + p.get_width() / 2, p.get_height() + 10),
+                        ha='center', fontsize=8)
+    plt.suptitle(
+        'Categorical Feature Distributions\n'
+        'Activity Level imbalance (Low ~57%) must be addressed with class weights or SMOTE during modelling',
+        fontsize=13, fontweight='bold',
+    )
+    plt.tight_layout()
+    plt.show()
+
+    return desc.round(3)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Bivariate analysis
+# ─────────────────────────────────────────────────────────────────────────────
+def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Visualise how each feature relates to Activity Level via:
+    - Box plots (numeric features)
+    - Violin plots (CO2 sensors)
+    - Stacked bar charts (categorical features)
+
+    Insight — why this matters:
+        Box plots reveal whether a sensor's median and spread differ meaningfully
+        across activity classes. A sensor where all three boxes overlap heavily
+        carries little predictive signal. Sensors where medians shift upward
+        from Low → High Activity are strong candidate features.
+
+        Violin plots add density information on top of quartile summaries —
+        useful for CO2 sensors because they show whether the High Activity class
+        has a bimodal distribution (e.g. a subgroup that cooks vs one that
+        exercises), which a plain box plot would miss.
+
+        Stacked bar charts for categorical features show whether residents in
+        certain HVAC modes or lighting conditions are more likely to be in a
+        particular activity class — useful for feature engineering (e.g. creating
+        a binary 'is_bright_light' flag).
+
+    Returns
+    -------
+    group_means : pd.DataFrame
+        Mean sensor readings grouped by activity level.
+    """
+    # Box plots — all numeric sensors
+    fig, axes = plt.subplots(3, 3, figsize=(18, 13))
+    axes = axes.flatten()
+    for i, col in enumerate(NUMERIC_COLS):
+        sns.boxplot(
+            data=df, x='Activity Level', y=col, order=ACTIVITY_ORDER,
+            palette=PALETTE, ax=axes[i], width=0.5,
+            flierprops=dict(marker='o', markersize=2, alpha=0.3),
+        )
+        axes[i].set_title(col, fontweight='bold', fontsize=10)
+        axes[i].set_xlabel('')
+        axes[i].tick_params(axis='x', rotation=15)
+    plt.suptitle('Sensor Readings by Activity Level', fontsize=14, fontweight='bold', y=1.01)
+    plt.tight_layout()
+    plt.show()
+
+    # Violin plots — CO2 sensors
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    for i, col in enumerate(['CO2_InfraredSensor', 'CO2_ElectroChemicalSensor']):
+        sns.violinplot(
+            data=df, x='Activity Level', y=col, order=ACTIVITY_ORDER,
+            palette=PALETTE, ax=axes[i], inner='quartile',
+        )
+        axes[i].set_title(f'{col} by Activity Level', fontweight='bold')
+        axes[i].set_xlabel('')
+    plt.suptitle('CO2 Sensor Distributions by Activity Level', fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+
+    # Stacked bar — categorical features
+    cat_features = ['Time of Day', 'HVAC Operation Mode', 'Ambient Light Level']
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+    for i, col in enumerate(cat_features):
+        ct = pd.crosstab(df[col], df['Activity Level'], normalize='index') * 100
+        ct = ct[[c for c in ACTIVITY_ORDER if c in ct.columns]]
+        ct.plot(kind='bar', stacked=True, ax=axes[i],
+                color=[PALETTE[c] for c in ct.columns], edgecolor='white', width=0.7)
+        axes[i].set_title(f'{col} vs Activity Level', fontweight='bold')
+        axes[i].set_ylabel('% of rows')
+        axes[i].set_xlabel('')
+        axes[i].tick_params(axis='x', rotation=35)
+        axes[i].legend(loc='upper right', fontsize=8)
+    plt.suptitle('Categorical Features vs Activity Level (normalised)',
+                 fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+
+    # Group means table
+    group_means = df.groupby('Activity Level')[NUMERIC_COLS].mean().round(2)
+    print('\nGroup means by Activity Level:')
+    print(group_means.loc[[a for a in ACTIVITY_ORDER if a in group_means.index]].to_string())
+
+    return group_means.loc[[a for a in ACTIVITY_ORDER if a in group_means.index]]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — Correlation analysis
+# ─────────────────────────────────────────────────────────────────────────────
+def correlation_analysis(df: pd.DataFrame) -> pd.Series:
+    """
+    Compute and visualise Pearson correlations among numeric features
+    and between features and the ordinally-encoded target.
+
+    Insight — why this matters:
+        High inter-feature correlation (multicollinearity) does not hurt
+        tree-based models but inflates coefficient variance in linear models.
+        Knowing which features are redundant lets us prune inputs for simpler
+        models without sacrificing accuracy.
+
+        The feature-vs-target bar chart gives a quick, ranked view of which
+        sensors are worth engineering further (e.g. lag features, rolling means)
+        and which are likely noise.
+
+        Note: Pearson r captures only *linear* relationships. A low r does not
+        mean a feature is useless — Temperature and Humidity may still
+        contribute non-linearly (captured by tree-based models).
+
+    Returns
+    -------
+    target_corr : pd.Series
+        Absolute correlations with Activity Level, sorted descending.
+    """
+    activity_encode = {'Low Activity': 0, 'Moderate Activity': 1, 'High Activity': 2}
+    df = df.copy()
+    df['Activity_Encoded'] = df['Activity Level'].map(activity_encode)
+
+    corr_cols = NUMERIC_COLS + ['Activity_Encoded']
+    corr_matrix = df[corr_cols].corr()
+
+    # Full heatmap
+    fig, ax = plt.subplots(figsize=(13, 10))
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+    sns.heatmap(
+        corr_matrix, mask=mask, annot=True, fmt='.2f', cmap='RdBu_r',
+        center=0, vmin=-1, vmax=1, ax=ax,
+        linewidths=0.5, annot_kws={'size': 9},
+    )
+    ax.set_title('Pearson Correlation Matrix (Numeric Features + Encoded Target)',
+                 fontweight='bold', pad=15)
+    plt.tight_layout()
+    plt.show()
+
+    # Feature-target correlations ranked
+    target_corr = corr_matrix['Activity_Encoded'].drop('Activity_Encoded').abs().sort_values(ascending=False)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    target_corr.plot(kind='bar', ax=ax, color=sns.color_palette('Blues_r', len(target_corr)))
+    ax.set_title('Feature Correlation with Activity Level (absolute Pearson r)', fontweight='bold')
+    ax.set_ylabel('|Pearson r|')
+    ax.set_xlabel('')
+    ax.tick_params(axis='x', rotation=35)
+    for p in ax.patches:
+        ax.annotate(f'{p.get_height():.3f}',
+                    (p.get_x() + p.get_width() / 2, p.get_height() + 0.002),
+                    ha='center', fontsize=9)
+    plt.tight_layout()
+    plt.show()
+
+    print('\nFeature correlations with target (ranked):')
+    print(target_corr.to_string())
+
+    return target_corr
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 7 — Session-level analysis
+# ─────────────────────────────────────────────────────────────────────────────
+def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Analyse how sensor readings and activity distributions vary across sessions.
+
+    Insight — why this matters:
+        Each Session ID represents a distinct monitoring period (likely a
+        different resident or a different day). If sessions have very different
+        class distributions, a naive random train/test split could leak session
+        context into the model — artificially inflating accuracy.
+
+        By identifying session-level patterns here we can:
+        1. Use GroupKFold (grouped by Session ID) to ensure no session appears
+           in both train and test folds.
+        2. Spot batch effects — if CO2 consistently reads higher in certain
+           sessions regardless of activity, that session may need its own
+           normalisation (z-score within session).
+
+    Returns
+    -------
+    session_stats : pd.DataFrame
+        Per-session aggregated statistics.
+    """
+    activity_encode = {'Low Activity': 0, 'Moderate Activity': 1, 'High Activity': 2}
+    df = df.copy()
+    df['Activity_Encoded'] = df['Activity Level'].map(activity_encode)
+
+    session_stats = df.groupby('Session ID').agg(
+        rows=('Activity Level', 'count'),
+        low_pct=('Activity_Encoded', lambda x: (x == 0).mean() * 100),
+        mod_pct=('Activity_Encoded', lambda x: (x == 1).mean() * 100),
+        high_pct=('Activity_Encoded', lambda x: (x == 2).mean() * 100),
+        avg_co2=('CO2_ElectroChemicalSensor', 'mean'),
+        avg_temp=('Temperature', 'mean'),
+    ).reset_index()
+
+    print(f'Unique sessions : {df["Session ID"].nunique()}')
+    print(f'Rows per session — min: {session_stats["rows"].min()}, '
+          f'max: {session_stats["rows"].max()}, '
+          f'mean: {session_stats["rows"].mean():.1f}')
+
+    # Plots
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    session_stats['rows'].plot(kind='hist', bins=30, ax=axes[0], color='#4C72B0', edgecolor='white')
+    axes[0].set_title('Distribution of Rows per Session', fontweight='bold')
+    axes[0].set_xlabel('Number of rows')
+
+    axes[1].scatter(session_stats['Session ID'], session_stats['avg_co2'],
+                    alpha=0.5, s=15, color='#DD8452')
+    axes[1].set_title('Mean CO2 (ElectroChemical) per Session', fontweight='bold')
+    axes[1].set_xlabel('Session ID')
+    axes[1].set_ylabel('Mean CO2 (ppm)')
+    plt.tight_layout()
+    plt.show()
+
+    # Activity split across top 20 sessions
+    sample_sessions = df['Session ID'].value_counts().head(20).index
+    act_by_session = (
+        df[df['Session ID'].isin(sample_sessions)]
+        .groupby(['Session ID', 'Activity Level'])
+        .size()
+        .unstack(fill_value=0)
+    )
+    act_pct = act_by_session.div(act_by_session.sum(axis=1), axis=0) * 100
+    fig, ax = plt.subplots(figsize=(14, 5))
+    act_pct[[c for c in ACTIVITY_ORDER if c in act_pct.columns]].plot(
+        kind='bar', stacked=True, ax=ax,
+        color=[PALETTE[c] for c in ACTIVITY_ORDER if c in act_pct.columns],
+        edgecolor='white',
+    )
+    ax.set_title('Activity Level Distribution across Sessions (top 20)', fontweight='bold')
+    ax.set_xlabel('Session ID')
+    ax.set_ylabel('% of readings')
+    ax.tick_params(axis='x', rotation=45)
+    ax.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
+
+    return session_stats
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 8 — Summary
+# ─────────────────────────────────────────────────────────────────────────────
+def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
+    """
+    Print the final cleaned dataset summary and optionally save cleaned CSV.
+    Also prints a ready-to-use modelling pipeline skeleton so the next
+    notebook can pick up exactly where EDA left off.
+
+    Parameters
+    ----------
+    df       : cleaned DataFrame (output of clean_data)
+    save_csv : if True, saves ProjectData/cleaned_gas_monitoring.csv
+    """
+    print('=== Final Cleaned Dataset ===')
+    print(f'Shape         : {df.shape}')
+    print(f'Missing values: {df.isnull().sum().sum()}')
+    print()
+    print('Activity Level distribution:')
+    vc = df['Activity Level'].value_counts()
+    for k, v in vc.items():
+        print(f'  {k:<22}: {v:>5}  ({v / len(df) * 100:.1f}%)')
+
+    if save_csv:
+        import os
+        os.makedirs('data', exist_ok=True)
+        out_path = 'ProjectData/cleaned_gas_monitoring.csv'
+        df.to_csv(out_path, index=False)
+        print(f'\nCleaned dataset saved to {out_path}')
+
+    # ── Modelling pipeline outline ─────────────────────────────────────────────
+    print('\n' + '=' * 60)
+    print('NEXT STEP — Modelling Pipeline Skeleton')
+    print('=' * 60)
+    print("""
+The following skeleton shows the key steps to carry into the modelling notebook.
+Fill in each block with the corresponding library calls.
+
+─── 1. Feature Engineering ──────────────────────────────────────
+  • Ordinal-encode  : 'Ambient Light Level' (dim < moderate < bright)
+  • Ordinal-encode  : 'Time of Day' (morning < afternoon < evening < night)
+  • One-hot-encode  : 'HVAC Operation Mode' (no natural order)
+  • Optional        : log1p-transform right-skewed sensors (CO_GasSensor,
+                      MetalOxideSensor_Unit4) for linear/SVM models
+
+─── 2. Train / Test Split (stratified + grouped by session) ──────
+  from sklearn.model_selection import GroupShuffleSplit
+  splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+  train_idx, test_idx = next(splitter.split(X, y, groups=df['Session ID']))
+
+─── 3. Handle Class Imbalance ────────────────────────────────────
+  Option A — class weights (fast, no synthetic data):
+      class_weight='balanced' in RandomForestClassifier / LogisticRegression
+  Option B — SMOTE (generates synthetic minority samples):
+      from imblearn.over_sampling import SMOTE
+      X_train_res, y_train_res = SMOTE(random_state=42).fit_resample(X_train, y_train)
+
+─── 4. Cross-Validation ──────────────────────────────────────────
+  from sklearn.model_selection import StratifiedGroupKFold
+  cv = StratifiedGroupKFold(n_splits=5)
+  # Pass groups=df.loc[train_idx, 'Session ID'] to cross_val_score
+
+─── 5. Models to Train ───────────────────────────────────────────
+  a) Logistic Regression (baseline, interpretable)
+  b) Random Forest       (handles mixed types, robust)
+  c) XGBoost / LightGBM  (best performance on tabular imbalanced data)
+
+─── 6. Evaluation Metric ────────────────────────────────────────
+  Use macro F1-score (treats all 3 classes equally despite imbalance):
+      from sklearn.metrics import f1_score
+      f1_score(y_test, y_pred, average='macro')
+""")
+    print('=' * 60)
