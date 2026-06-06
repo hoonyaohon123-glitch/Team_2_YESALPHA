@@ -2,10 +2,8 @@
 feature_engineering.py
 ----------------------
 This script takes the cleaned gas monitoring dataset and engineers 
-advanced temporal, rolling, and aggregated features to improve 
-machine learning model accuracy.
-
-Output: data/model_ready_gas_monitoring.csv
+advanced temporal, rolling, aggregated, and domain-specific features 
+to improve machine learning model accuracy.
 """
 
 import pandas as pd
@@ -14,37 +12,25 @@ import os
 import sys
 
 def load_cleaned_data(relative_path: str = 'data/cleaned_gas_monitoring.csv') -> pd.DataFrame:
-    """
-    Loads the cleaned dataset using dynamic absolute paths to prevent VS Code and Docker errors.
-    Explicitly looks inside the 'data' subfolder.
-    """
-    # Automatically detect the exact folder where this Python script is saved
+    """Loads the cleaned dataset using dynamic absolute paths."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Attach the 'data/...' path to it
     file_path = os.path.join(current_dir, relative_path)
     
     print(f"Attempting to load data from:\n  -> {file_path}")
     
-    # Failsafe: Check if the file actually exists before trying to read it
     if not os.path.exists(file_path):
-        print(f"\n[ERROR] File not found!")
-        print(f"Please ensure 'cleaned_gas_monitoring.csv' is actually saved inside the 'data' folder.")
-        print(f"Looked exactly here: {file_path}")
-        sys.exit(1) # Stops the script from freezing
+        print(f"\n[ERROR] File not found! Looked exactly here: {file_path}")
+        sys.exit(1)
         
     return pd.read_csv(file_path)
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Applies feature engineering transformations to the dataframe.
-    Assumes data is chronologically ordered within each Session ID.
-    """
+    """Applies advanced feature engineering transformations."""
     print("\nEngineering features...")
     df = df.copy()
 
     # -------------------------------------------------------------------------
-    # 1. Temporal Dynamics (Rate of Change)
+    # 1. Temporal Dynamics
     # -------------------------------------------------------------------------
     print(" -> Calculating temporal dynamics...")
     df['CO2_Infrared_Diff'] = df.groupby('Session ID')['CO2_InfraredSensor'].diff().fillna(0)
@@ -52,7 +38,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['Humidity_Diff'] = df.groupby('Session ID')['Humidity'].diff().fillna(0)
 
     # -------------------------------------------------------------------------
-    # 2. Rolling Window Statistics (Smoothing & Volatility)
+    # 2. Rolling Window Statistics
     # -------------------------------------------------------------------------
     print(" -> Calculating rolling window statistics...")
     df['Temp_Volatility'] = df.groupby('Session ID')['Temperature'].transform(
@@ -61,9 +47,14 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['CO2_Volatility'] = df.groupby('Session ID')['CO2_InfraredSensor'].transform(
         lambda x: x.rolling(window=5, min_periods=1).std().fillna(0)
     )
+    
+    # Calculate a rolling mean for CO2 (Used later for the Discrepancy Flag)
+    df['CO2_Rolling_Mean'] = df.groupby('Session ID')['CO2_InfraredSensor'].transform(
+        lambda x: x.rolling(window=10, min_periods=1).mean()
+    )
 
     # -------------------------------------------------------------------------
-    # 3. Sensor Fusion (Aggregated Meta-Features)
+    # 3. Sensor Fusion (Means and Maxes)
     # -------------------------------------------------------------------------
     print(" -> Fusing metal oxide sensors...")
     metal_oxide_cols = [
@@ -81,7 +72,29 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['CO2_Centered'] = df['CO2_InfraredSensor'] - df.groupby('Session ID')['CO2_InfraredSensor'].transform('mean')
 
     # -------------------------------------------------------------------------
-    # 5. Categorical Encoding (Model Readiness)
+    # 5. Domain-Specific Features (Air Quality & Environmental Comfort)
+    # -------------------------------------------------------------------------
+    print(" -> Calculating Environmental Comfort, VOC Burden, and Discrepancy Flags...")
+    
+    # A. Environmental Comfort Index (Thom's Discomfort Index)
+    df['Env_Comfort_Index'] = df['Temperature'] - 0.55 * (1 - (df['Humidity'] / 100)) * (df['Temperature'] - 14.5)
+
+    # B. Total VOC Air Burden (Sum of all units)
+    df['Total_VOC_Burden'] = df[metal_oxide_cols].sum(axis=1)
+    
+    # Rolling VOC Burden (How much gas has accumulated over the last 10 readings?)
+    df['VOC_Accumulation_10'] = df.groupby('Session ID')['Total_VOC_Burden'].transform(
+        lambda x: x.rolling(window=10, min_periods=1).sum()
+    )
+
+    # C. CO2 Sensor Discrepancy Flag (Binary 0 or 1)
+    df['CO2_Discrepancy_Flag'] = (abs(df['CO2_InfraredSensor'] - df['CO2_Rolling_Mean']) > 30).astype(int)
+    
+    # Drop the temporary rolling mean column to keep the dataset clean
+    df = df.drop(columns=['CO2_Rolling_Mean'])
+
+    # -------------------------------------------------------------------------
+    # 6. Text-to-Numeric Translation (Ordinal Mapping & Dummy Variables)
     # -------------------------------------------------------------------------
     print(" -> Encoding categorical variables...")
     
@@ -96,36 +109,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     # One-Hot Encoding for Nominal Categories
     df = pd.get_dummies(df, columns=['HVAC Operation Mode', 'Time of Day'], drop_first=True)
 
-    # Drop the original raw text columns that are now encoded
+    # Drop the original raw text columns
     df = df.drop(columns=['Activity Level', 'Ambient Light Level'])
 
     return df
-
-def main():
-    print("=== Starting Feature Engineering Pipeline ===")
-    
-    # 1. Load the data (now automatically looking in the data/ folder)
-    df = load_cleaned_data('data/cleaned_gas_monitoring.csv')
-    
-    # 2. Apply feature engineering
-    df_features = engineer_features(df)
-    
-    # 3. Summary of new dataset
-    print("\n=== Feature Engineering Complete ===")
-    print(f"Original shape: {df.shape}")
-    print(f"New shape: {df_features.shape}")
-    print(f"Total Features: {len(df_features.columns)}")
-    
-    # 4. Save to CSV in the EXACT same 'data' folder
-    output_filename = 'data/model_ready_gas_monitoring.csv'
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    output_path = os.path.join(current_dir, output_filename)
-    
-    # Ensure the data directory exists before saving, just in case
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    df_features.to_csv(output_path, index=False)
-    print(f"\nModel-ready dataset saved successfully to:\n  -> {output_path}")
-
-if __name__ == "__main__":
-    main()
