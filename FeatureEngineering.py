@@ -89,7 +89,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     # -------------------------------------------------------------------------
     # 4. Session-Level Baselines
     # -------------------------------------------------------------------------
-    # Measuresh the current reading difference from the normal average.
+    # Measures the current reading difference from the normal average.
     print(" -> Calculating session baselines...")
 
     # Measure how far the current Temperature is from the average Temperature of this specific session.
