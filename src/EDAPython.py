@@ -567,3 +567,18 @@ def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
     print('6. Train models       : Logistic Regression → Random Forest → XGBoost')
     print('7. Evaluate           : macro F1-score (not accuracy — classes are imbalanced)')
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline Execution Block
+# ─────────────────────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    print("Starting EDA and Data Cleaning Pipeline...")
+    
+    # Load raw data
+    raw_df = load_data()
+    
+    # Clean and sanitize
+    cleaned_df = clean_data(raw_df)
+    sanitized_df = sanitize_contamination(cleaned_df)
+    
+    # Save the final output for the ML pipeline
+    summary(sanitized_df, save_csv=True)
