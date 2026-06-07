@@ -90,11 +90,21 @@ def check_quality(df: pd.DataFrame) -> None:
         plt.tight_layout()
         plt.show()
 
+
     # ── Label noise ──
     print('\n=== Raw Activity Level values ===')
     print(df['Activity Level'].value_counts().to_string())
     print('\n=== Raw HVAC Operation Mode values ===')
     print(df['HVAC Operation Mode'].value_counts().to_string())
+
+    # ── Physical boundary checks ──
+    print('\n=== Physical Boundary Violations ===')
+    print(f'  CO2_InfraredSensor negative values : {(df["CO2_InfraredSensor"] < 0).sum()} rows (min={df["CO2_InfraredSensor"].min():.2f} ppm)')
+    print(f'  CO2_InfraredSensor mean            : {df["CO2_InfraredSensor"].mean():.2f} ppm (expected ~420+ ppm)')
+    print(f'  CO2_ElectroChemicalSensor mean     : {df["CO2_ElectroChemicalSensor"].mean():.2f} ppm')
+    print(f'  Humidity below 0%                  : {(df["Humidity"] < 0).sum()} rows')
+    print(f'  Humidity above 100%                : {(df["Humidity"] > 100).sum()} rows')
+    print(f'  Humidity range                     : {df["Humidity"].min():.2f}% to {df["Humidity"].max():.2f}%')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +163,7 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     # 5a. Fix negative sensor values — physically impossible for Humidity and CO2 sensors.
     #     Humidity must be 0–100 (%RH); CO2 sensors cannot read below 0 ppm.
     #     Negative readings are likely sensor faults; replace with column median.
-    for col in ['Humidity', 'CO_GasSensor']:
+    for col in ['Humidity', 'CO_GasSensor', 'CO2_InfraredSensor']:
         neg_mask = df[col] < 0
         if neg_mask.sum() > 0:
             valid_median = df.loc[df[col] >= 0, col].median()
@@ -197,6 +207,40 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3b — Sanitize unphysical sensor contamination
+# ─────────────────────────────────────────────────────────────────────────────
+def sanitize_contamination(df):
+    """
+    Explicitly strips out unphysical synthetic contamination
+    before features are engineered, leaving true environmental outliers intact.
+
+    Fixes:
+    - Humidity outside 0-100% (physically impossible)
+    - CO2_InfraredSensor negative values (gas concentration cannot be negative)
+    - Repairs neutralized values using grouped medians by Time of Day
+      to preserve natural daytime/nighttime environmental shifts
+    """
+    df = df.copy()
+
+    # 1. Neutralize unphysical Humidity boundaries (Cannot be < 0% or > 100%)
+    df.loc[(df['Humidity'] < 0) | (df['Humidity'] > 100), 'Humidity'] = np.nan
+
+    # 2. Neutralize unphysical CO2 Infrared boundaries (Cannot have negative gas)
+    df.loc[df['CO2_InfraredSensor'] < 0, 'CO2_InfraredSensor'] = np.nan
+
+    # 3. Repair the neutralized values using grouped medians
+    # We group by 'Time of Day' to preserve natural daytime/nighttime environmental shifts
+    cols_to_repair = ['Humidity', 'CO2_InfraredSensor', 'MetalOxideSensor_Unit2', 'CO_GasSensor']
+    for col in cols_to_repair:
+        df[col] = df.groupby('Time of Day')[col].transform(lambda x: x.fillna(x.median()))
+
+    print('=== Sanitization Complete ===')
+    print(f'  Humidity range after fix        : {df["Humidity"].min():.2f}% to {df["Humidity"].max():.2f}%')
+    print(f'  CO2_InfraredSensor min after fix: {df["CO2_InfraredSensor"].min():.2f} ppm')
+    print(f'  Remaining nulls                 : {df.isnull().sum().sum()}')
+
+    return df
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 4 — Univariate analysis
@@ -235,7 +279,7 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
     for i, col in enumerate(NUMERIC_COLS):
         ax = axes[i]
         sns.histplot(df[col], bins=50, kde=True, ax=ax, color='#4C72B0', alpha=0.7)
-        ax.set_title(col, fontsize=11, fontweight='bold')
+        ax.set_title(f'C{i+1} - {col}', fontsize=11, fontweight='bold')
         ax.set_xlabel('')
         skew_val = df[col].skew()
         kurt_val = df[col].kurt()
@@ -255,7 +299,7 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         ax = axes[i]
         vc = df[col].value_counts()
         vc.plot(kind='bar', ax=ax, color=sns.color_palette('muted', len(vc)), edgecolor='white')
-        ax.set_title(col, fontweight='bold')
+        ax.set_title(f'C{i+10} - {col}', fontweight='bold')
         ax.set_xlabel('')
         ax.tick_params(axis='x', rotation=30)
         for p in ax.patches:
