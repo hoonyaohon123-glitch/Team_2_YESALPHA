@@ -1,15 +1,3 @@
-"""
-Some of the funcitons that are used in the Jupyter Notebook:
-    df_raw = load_data()
-    check_quality(df_raw)
-    df = clean_data(df_raw)
-    univariate_analysis(df)
-    bivariate_analysis(df)
-    correlation_analysis(df)
-    session_analysis(df)
-    summary(df)
-"""
-
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -24,32 +12,35 @@ from scipy import stats
 sns.set_theme(style='whitegrid', palette='muted', font_scale=1.1)
 plt.rcParams['figure.dpi'] = 110
 
+# Colours for plotting graphs for activity classes
 PALETTE = {
     'Low Activity':      '#4C72B0',
     'Moderate Activity': '#DD8452',
     'High Activity':     '#55A868',
 }
+
+# Ordering of the activity (Low -> Moderate -> High)
 ACTIVITY_ORDER = ['Low Activity', 'Moderate Activity', 'High Activity']
+
+# Listing all the numeric sensor columns that will be used for anlyzing
 NUMERIC_COLS = [
     'Temperature', 'Humidity', 'CO2_InfraredSensor', 'CO2_ElectroChemicalSensor',
     'MetalOxideSensor_Unit1', 'MetalOxideSensor_Unit2', 'MetalOxideSensor_Unit3',
     'MetalOxideSensor_Unit4', 'CO_GasSensor',
 ]
+
+# Setting the default file path
 DB_PATH = 'ProjectData/gas_monitoring.db'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 1 — Load data
+# PART 1 — Load data
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for loading the data and displaying basic info
 def load_data(db_path: str = DB_PATH) -> pd.DataFrame:
-    """
-    Load the gas_monitoring table from the SQLite database.
 
-    Returns
-    -------
-    df_raw : pd.DataFrame
-        Raw, unmodified dataset.
-    """
+    "Load the gas_monitoring table from the SQLite database."
+
     conn = sqlite3.connect(db_path)
     df_raw = pd.read_sql('SELECT * FROM gas_monitoring', conn)
     conn.close()
@@ -61,14 +52,14 @@ def load_data(db_path: str = DB_PATH) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — Data quality assessment
+# PART 2 — Data quality assessment
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for data quality checking to be standardized
 def check_quality(df: pd.DataFrame) -> None:
-    """
-    Print and visualise data quality issues:
-    missing values, duplicates, and label noise in categorical columns.
-    """
-    # ── Missing values ──
+
+    "Print and visualise data quality issues: missing values, duplicates, and label noise in categorical columns."
+
+    # Missing values - Conveerts, counts and displays the values
     missing = df.isnull().sum()
     missing_pct = (missing / len(df) * 100).round(2)
     missing_df = pd.DataFrame({'Missing Count': missing, 'Missing %': missing_pct})
@@ -80,24 +71,27 @@ def check_quality(df: pd.DataFrame) -> None:
     print(f'  {df.duplicated().sum()} duplicate rows found')
 
     # ── Plot missing values ──
+    # If statement: plots a chart to show missing values
     if not missing_df.empty:
         fig, ax = plt.subplots(figsize=(9, 4))
         missing_df['Missing %'].sort_values().plot(kind='barh', ax=ax, color='#c0392b')
         ax.set_xlabel('Missing (%)')
         ax.set_title('Missing Value Rate per Column')
+
+        # For loop: label each bar with its exact missing % value 
         for p in ax.patches:
             ax.annotate(f'{p.get_width():.1f}%', (p.get_width() + 0.3, p.get_y() + 0.3))
         plt.tight_layout()
         plt.show()
 
 
-    # ── Label noise ──
+    # Label noise - detect inconsitenct such as spacing, undescore, cases etc.
     print('\n=== Raw Activity Level values ===')
     print(df['Activity Level'].value_counts().to_string())
     print('\n=== Raw HVAC Operation Mode values ===')
     print(df['HVAC Operation Mode'].value_counts().to_string())
 
-    # ── Physical boundary checks ──
+    # Physical boundary checks - Flags out physically impossible values
     print('\n=== Physical Boundary Violations ===')
     print(f'  CO2_InfraredSensor negative values : {(df["CO2_InfraredSensor"] < 0).sum()} rows (min={df["CO2_InfraredSensor"].min():.2f} ppm)')
     print(f'  CO2_InfraredSensor mean            : {df["CO2_InfraredSensor"].mean():.2f} ppm (expected ~420+ ppm)')
@@ -108,22 +102,13 @@ def check_quality(df: pd.DataFrame) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 3 — Data cleaning
+# PART 3 — Data cleaning
 # ─────────────────────────────────────────────────────────────────────────────
+# Data cleaning based on the data quality assessment
 def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Clean and standardise the raw dataset:
-    - Normalise Activity Level and HVAC Operation Mode labels
-    - Replace temperature outliers (outside 10–40 C) with column median
-    - Impute missing numeric values with median
-    - Fix negative values in Humidity and CO_GasSensor (sensor faults)
-    - Fill missing Ambient Light Level with mode
 
-    Returns
-    -------
-    df : pd.DataFrame
-        Cleaned dataset.
-    """
+    "Clean and standardise the raw dataset"
+
     df = df_raw.copy()
 
     # 1. Standardise Activity Level labels
@@ -138,6 +123,7 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     df['Activity Level'] = df['Activity Level'].map(activity_map)
 
     # 2. Standardise HVAC labels → lowercase + underscore
+    # String operations: removes any spaces, lowercase and replace spaces with underscores
     df['HVAC Operation Mode'] = (
         df['HVAC Operation Mode']
         .str.strip()
@@ -147,6 +133,8 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     # 3. Replace temperature outliers with median of valid readings
     TEMP_LOW, TEMP_HIGH = 10.0, 40.0
+
+    # Boolean mask: identifies rows where temperature is outside valid range
     temp_mask = (df['Temperature'] < TEMP_LOW) | (df['Temperature'] > TEMP_HIGH)
     temp_median = df.loc[~temp_mask, 'Temperature'].median()
     print(f'Temperature outliers : {temp_mask.sum()} rows  '
@@ -155,16 +143,18 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     print(f'  Replaced with median: {temp_median:.2f} C')
 
     # 4. Impute missing numeric columns with median
+    # For loop: fills in any missing values in each numeric column with the median
     for col in ['Humidity', 'MetalOxideSensor_Unit2', 'CO_GasSensor']:
         median_val = df[col].median()
         df[col].fillna(median_val, inplace=True)
         print(f'  Imputed {col} with median = {median_val:.2f}')
 
     # 5a. Fix negative sensor values — physically impossible for Humidity and CO2 sensors.
-    #     Humidity must be 0–100 (%RH); CO2 sensors cannot read below 0 ppm.
-    #     Negative readings are likely sensor faults; replace with column median.
+    # For loop: checks each sensor column for negative values and replaces with median
     for col in ['Humidity', 'CO_GasSensor', 'CO2_InfraredSensor']:
         neg_mask = df[col] < 0
+
+        # If-else statement: the values will only be replaced if negative values actually exist
         if neg_mask.sum() > 0:
             valid_median = df.loc[df[col] >= 0, col].median()
             print(f'  Negative values in {col}: {neg_mask.sum()} rows — replaced with median = {valid_median:.2f}')
@@ -182,25 +172,37 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     print(df['Activity Level'].value_counts().to_string())
 
     # 6. Remove duplicates if any
+    # Counts the amount of duplicates
     dup_count = df.duplicated().sum()
+
+    # If statement: removes duplicates if there are any found
     if dup_count > 0:
         df = df.drop_duplicates()
         print(f'\nRemoved {dup_count} duplicate rows.')
     
     # 7. Handling Null Values
+
+    # List all numeric columns that may need imputation
     numerical_features = ['Temperature', 'Humidity', 'CO2_InfraredSensor', 'CO2_ElectroChemicalSensor', 'MetalOxideSensor_Unit1', 'MetalOxideSensor_Unit2', 'MetalOxideSensor_Unit3', 'MetalOxideSensor_Unit4', 'CO_GasSensor'] # session id not included as it is not a feature for modeling
+    
+    # List all categorical columns that may need imputation
     categorical_features = ['Time of Day', 'HVAC Operation Mode', 'Ambient Light Level', 'Activity Level']
     print("\n -> Imputing missing values...")
 
+    # For loop: filling missing values for the columns using median (Numeric columns)
     for col in ['Humidity', 'MetalOxideSensor_Unit2', 'CO_GasSensor']:
+
+        # If statement: imputes if its in the numeric features list
         if col in numerical_features:
             median_val = df[col].median()
             df[col] = df[col].fillna(median_val)
 
+        # If statement: fills in missing ambient light using common values 
         if 'Ambient Light Level' in categorical_features:
             df['Ambient Light Level'] = df.groupby('Time of Day')['Ambient Light Level'].transform(
                 lambda x: x.fillna(x.mode()[0])
             )
+
     print("\nMissing values after imputation:")
     print(df[numerical_features + categorical_features].isnull().sum())
 
@@ -208,19 +210,13 @@ def clean_data(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 3b — Sanitize unphysical sensor contamination
+# PART 3b — Sanitize unphysical sensor contamination
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for checking for any unrealistic data types
 def sanitize_contamination(df):
-    """
-    Explicitly strips out unphysical synthetic contamination
-    before features are engineered, leaving true environmental outliers intact.
 
-    Fixes:
-    - Humidity outside 0-100% (physically impossible)
-    - CO2_InfraredSensor negative values (gas concentration cannot be negative)
-    - Repairs neutralized values using grouped medians by Time of Day
-      to preserve natural daytime/nighttime environmental shifts
-    """
+    "Strips out unphysical synthetic contamination before any of thefeatures are engineered."
+
     df = df.copy()
 
     # 1. Neutralize unphysical Humidity boundaries (Cannot be < 0% or > 100%)
@@ -232,6 +228,8 @@ def sanitize_contamination(df):
     # 3. Repair the neutralized values using grouped medians
     # We group by 'Time of Day' to preserve natural daytime/nighttime environmental shifts
     cols_to_repair = ['Humidity', 'CO2_InfraredSensor', 'MetalOxideSensor_Unit2', 'CO_GasSensor']
+
+    # For loop: repairs any contaminated columns using the median which is grouped by Time of Day
     for col in cols_to_repair:
         df[col] = df.groupby('Time of Day')[col].transform(lambda x: x.fillna(x.median()))
 
@@ -243,17 +241,13 @@ def sanitize_contamination(df):
     return df
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — Univariate analysis
+# PART 4 — Univariate analysis
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for displaying the data and any features individually
 def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Print summary statistics and plot distributions for all features.
 
-    Returns
-    -------
-    desc : pd.DataFrame
-        Descriptive statistics table with skewness and kurtosis.
-    """
+    "Print summary statistics and plot distributions for all features."
+
     # Summary stats
     desc = df[NUMERIC_COLS].describe().T
     desc['skewness'] = df[NUMERIC_COLS].skew().round(3)
@@ -264,10 +258,14 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
     # Skew > 0.5 = right-skewed (use log1p transform for linear models)
     # Skew < -0.5 = left-skewed
     # Kurt > 1 = leptokurtic = more extreme outliers than normal
-    print('\n=== Skewness & Kurtosis Notes ===')
+    print('\n=== Skewness & Kurtosis Notes ===')\
+    
+    # For loop: prints the skewness and kurtosis interpretation for each numeric column
     for col in NUMERIC_COLS:
         skew = df[col].skew()
         kurt = df[col].kurt()
+
+        # If statement: flags any columns that needs log transform (skew >= 0.5)
         if abs(skew) >= 0.5:
             print(f'  {col}: skew={skew:.2f} — consider log1p transform for linear models')
         if kurt > 1:
@@ -276,6 +274,8 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
     # Numeric distributions
     fig, axes = plt.subplots(3, 3, figsize=(16, 12))
     axes = axes.flatten()
+
+    # For loop: plots a histogram with KDE curve for every numeric sensor
     for i, col in enumerate(NUMERIC_COLS):
         ax = axes[i]
         sns.histplot(df[col], bins=50, kde=True, ax=ax, color='#4C72B0', alpha=0.7)
@@ -283,29 +283,40 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         ax.set_xlabel('')
         skew_val = df[col].skew()
         kurt_val = df[col].kurt()
+
+        # Colours the graph annotation red if skew >= 0.5
         colour = '#c0392b' if abs(skew_val) >= 0.5 else '#27ae60'
         ax.annotate(f'skew={skew_val:.2f}  kurt={kurt_val:.2f}',
                     xy=(0.97, 0.92), xycoords='axes fraction',
                     ha='right', fontsize=8, color=colour)
+        
+    # Plotting
     plt.suptitle('Distribution of Numeric Sensor Features (post-cleaning)',
                  fontsize=14, fontweight='bold', y=1.01)
     plt.tight_layout()
     plt.show()
 
     # Categorical distributions
+    # List the columns that needs to be visualized
     cat_cols = ['Activity Level', 'Time of Day', 'HVAC Operation Mode', 'Ambient Light Level']
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     for i, col in enumerate(cat_cols):
         ax = axes[i]
+
+        # Counts the amount of times the category appeards
         vc = df[col].value_counts()
         vc.plot(kind='bar', ax=ax, color=sns.color_palette('muted', len(vc)), edgecolor='white')
         ax.set_title(f'Graph {i+10} - {col}', fontweight='bold')
         ax.set_xlabel('')
         ax.tick_params(axis='x', rotation=30)
+
+        # For loop: adds count label on top of each bar
         for p in ax.patches:
             ax.annotate(f'{int(p.get_height())}',
                         (p.get_x() + p.get_width() / 2, p.get_height() + 10),
                         ha='center', fontsize=8)
+            
+    # Plotting
     plt.suptitle('Categorical Feature Distributions', fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.show()
@@ -314,38 +325,39 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 5 — Bivariate analysis
+# PART 5 — Bivariate analysis
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for comparison of data to the activity level
 def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Visualise how each feature relates to Activity Level via:
-    - Box plots (numeric features)
-    - Violin plots (CO2 sensors)
-    - Stacked bar charts (categorical features)
 
-    Returns
-    -------
-    group_means : pd.DataFrame
-        Mean sensor readings grouped by activity level.
-    """
+    "Visualise how each feature relates to Activity Level via using different types of visualizations"
+
     # Box plots — all numeric sensors
     fig, axes = plt.subplots(3, 3, figsize=(18, 13))
     axes = axes.flatten()
+
+    # For loop: plotting a box plot for the numeric sensor against the activity level
     for i, col in enumerate(NUMERIC_COLS):
         sns.boxplot(
             data=df, x='Activity Level', y=col, order=ACTIVITY_ORDER,
             palette=PALETTE, ax=axes[i], width=0.5,
+
+            # controls how any outlier dots look like on the box plot
             flierprops=dict(marker='o', markersize=2, alpha=0.3),
         )
         axes[i].set_title(f'Graph {i+14} - {col}', fontweight='bold', fontsize=10)        
         axes[i].set_xlabel('')
         axes[i].tick_params(axis='x', rotation=15)
+
+    # Plotting
     plt.suptitle('Sensor Readings by Activity Level', fontsize=14, fontweight='bold', y=1.01)
     plt.tight_layout()
     plt.show()
 
     # Violin plots — CO2 sensors
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # For loop: plots for C)2 sensors to compare their distribution
     for i, col in enumerate(['CO2_InfraredSensor', 'CO2_ElectroChemicalSensor']):
         sns.violinplot(
             data=df, x='Activity Level', y=col, order=ACTIVITY_ORDER,
@@ -353,15 +365,24 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         )
         axes[i].set_title(f'Graph {i+23} - {col} by Activity Level', fontweight='bold')
         axes[i].set_xlabel('')
+
+    # Plotting
     plt.suptitle('CO2 Sensor Distributions by Activity Level', fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.show()
 
     # Stacked bar — categorical features
+    # List the columns that will be compared against the activity level
     cat_features = ['Time of Day', 'HVAC Operation Mode', 'Ambient Light Level']
     fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+
+    # For loop: plotting a normalized stacked bar chart for the categorical features
     for i, col in enumerate(cat_features):
+
+        # Counts how many times the category appears with each activity
         ct = pd.crosstab(df[col], df['Activity Level'], normalize='index') * 100
+
+        # Keeps only the activity columns that exists
         ct = ct[[c for c in ACTIVITY_ORDER if c in ct.columns]]
         ct.plot(kind='bar', stacked=True, ax=axes[i],
                 color=[PALETTE[c] for c in ct.columns], edgecolor='white', width=0.7)
@@ -370,6 +391,8 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         axes[i].set_xlabel('')
         axes[i].tick_params(axis='x', rotation=35)
         axes[i].legend(loc='upper right', fontsize=8)
+
+    # Plotting
     plt.suptitle('Categorical Features vs Activity Level (normalised)',
                  fontsize=13, fontweight='bold')
     plt.tight_layout()
@@ -382,27 +405,28 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 6 — Correlation analysis
+# PART 6 — Correlation analysis
 # ─────────────────────────────────────────────────────────────────────────────
+# Function to show which features are strongly correlated
 def correlation_analysis(df: pd.DataFrame) -> pd.Series:
-    """
-    Compute and visualise Pearson correlations among numeric features
-    and between features and the ordinally-encoded target.
+    
+    "Compute and visualise Pearson correlations among numeric features and between features and the ordinally-encoded target."
 
-    Returns
-    -------
-    target_corr : pd.Series
-        Absolute correlations with Activity Level, sorted descending.
-    """
+    # Maps the activity classes into correlation so that it can be calculated
     activity_encode = {'Low Activity': 0, 'Moderate Activity': 1, 'High Activity': 2}
     df = df.copy()
     df['Activity_Encoded'] = df['Activity Level'].map(activity_encode)
 
+    # Combines the numeric sensor columns with the encoded target for correlation
     corr_cols = NUMERIC_COLS + ['Activity_Encoded']
+
+    # Computing the Pearson correlation between every pair of columns
     corr_matrix = df[corr_cols].corr()
 
     # Full heatmap
     fig, ax = plt.subplots(figsize=(13, 10))
+
+    # Hides the upper triabgle to avoud showing any duplicate values
     mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
     sns.heatmap(
         corr_matrix, mask=mask, annot=True, fmt='.2f', cmap='RdBu_r',
@@ -411,10 +435,13 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
     )
     ax.set_title('Graph 28 - Pearson Correlation Matrix (Numeric Features + Encoded Target)',
                  fontweight='bold', pad=15)
+    
+    # Plotting
     plt.tight_layout()
     plt.show()
 
     # Feature-target correlations ranked
+    # Dropts the target column itself and sorts the features by correlation
     target_corr = corr_matrix['Activity_Encoded'].drop('Activity_Encoded').abs().sort_values(ascending=False)
     fig, ax = plt.subplots(figsize=(9, 5))
     target_corr.plot(kind='bar', ax=ax, color=sns.color_palette('Blues_r', len(target_corr)))
@@ -422,10 +449,14 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
     ax.set_ylabel('|Pearson r|')
     ax.set_xlabel('')
     ax.tick_params(axis='x', rotation=35)
+
+    # For liip: adds the correlation value on the bar
     for p in ax.patches:
         ax.annotate(f'{p.get_height():.3f}',
                     (p.get_x() + p.get_width() / 2, p.get_height() + 0.002),
                     ha='center', fontsize=9)
+        
+    # Plotting
     plt.tight_layout()
     plt.show()
 
@@ -433,36 +464,34 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 7 — Session-level analysis
+# PART 7 — Session-level analysis
 # ─────────────────────────────────────────────────────────────────────────────
+# Function for analysing and examingin thow the sensor readings and activities can vary across the different types of session
 def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Analyse how sensor readings and activity distributions vary across sessions.
 
-    Returns
-    -------
-    session_stats : pd.DataFrame
-        Per-session aggregated statistics.
-    """
+    "Analyse how sensor readings and activity distributions vary across sessions."
+
     activity_encode = {'Low Activity': 0, 'Moderate Activity': 1, 'High Activity': 2}
     df = df.copy()
     df['Activity_Encoded'] = df['Activity Level'].map(activity_encode)
 
+    # Groups the data based on their Session ID and calculates summary statistics for each session
+    # Lambda functions: calculate the percentage of each activity class by the session
     session_stats = df.groupby('Session ID').agg(
-        rows=('Activity Level', 'count'),
-        low_pct=('Activity_Encoded', lambda x: (x == 0).mean() * 100),
-        mod_pct=('Activity_Encoded', lambda x: (x == 1).mean() * 100),
-        high_pct=('Activity_Encoded', lambda x: (x == 2).mean() * 100),
-        avg_co2=('CO2_ElectroChemicalSensor', 'mean'),
-        avg_temp=('Temperature', 'mean'),
-    ).reset_index()
+        rows=('Activity Level', 'count'), # Total rows per session
+        low_pct=('Activity_Encoded', lambda x: (x == 0).mean() * 100), # % of Low Activity
+        mod_pct=('Activity_Encoded', lambda x: (x == 1).mean() * 100), # % of Moderate Activity
+        high_pct=('Activity_Encoded', lambda x: (x == 2).mean() * 100), # % of High Activity
+        avg_co2=('CO2_ElectroChemicalSensor', 'mean'), # Mean C02 per session
+        avg_temp=('Temperature', 'mean'), # mean teperature per session
+    ).reset_index() # converts the Session ID back into a regular column
 
     print(f'Unique sessions : {df["Session ID"].nunique()}')
     print(f'Rows per session — min: {session_stats["rows"].min()}, '
           f'max: {session_stats["rows"].max()}, '
           f'mean: {session_stats["rows"].mean():.1f}')
 
-    # Plots
+    # Plotting
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     session_stats['rows'].plot(kind='hist', bins=30, ax=axes[0], color='#4C72B0', edgecolor='white')
     axes[0].set_title('Graph 30 - Distribution of Rows per Session', fontweight='bold')
@@ -491,6 +520,8 @@ def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
         color=[PALETTE[c] for c in ACTIVITY_ORDER if c in act_pct.columns],
         edgecolor='white',
     )
+
+    # Plotting
     ax.set_title('Graph 32 - Activity Level Distribution across Sessions (top 20)', fontweight='bold')
     ax.set_xlabel('Session ID')
     ax.set_ylabel('% of readings')
@@ -503,17 +534,13 @@ def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 8 — Summary
+# PART 8 — Summary
 # ─────────────────────────────────────────────────────────────────────────────
+# Function to display and print the summary
 def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
-    """
-    Print the final cleaned dataset summary and optionally save cleaned CSV.
 
-    Parameters
-    ----------
-    df       : cleaned DataFrame (output of clean_data)
-    save_csv : if True, saves data/cleaned_gas_monitoring.csv # NOTE!!
-    """
+    "Print the final cleaned dataset summary and optionally save cleaned CSV."
+
     print('=== Final Cleaned Dataset ===')
     print(f'Shape         : {df.shape}')
     print(f'Missing values: {df.isnull().sum().sum()}')
@@ -539,3 +566,4 @@ def summary(df: pd.DataFrame, save_csv: bool = True) -> None:
     print('5. Cross-validate     : StratifiedGroupKFold (5 folds)')
     print('6. Train models       : Logistic Regression → Random Forest → XGBoost')
     print('7. Evaluate           : macro F1-score (not accuracy — classes are imbalanced)')
+
