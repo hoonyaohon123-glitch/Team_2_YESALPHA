@@ -44,7 +44,8 @@ To execute the entire workflow, simply run the shell script from the root of the
 7.  Type /app and hit enter
 
 ## Step 4.To stop environment (run in command prompt):
-	`docker compose down`
+
+`docker compose down`
 
 # Summary of key Findings:
 
