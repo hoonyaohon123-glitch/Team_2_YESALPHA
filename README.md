@@ -39,6 +39,9 @@ The activity level and HVAC labels were standardised to one consistent form. All
 **Univariate Analysis: **
 The CO_GasSensor is right-skewed where most readings are low but there are still some occasional high spikes which actually bring the average up. This is where we used the log1p transform as it is recommended before using linear models. CO2 sensors are near-normal therefore there is no transformation needed. Activity Level is imbalanced(Low is around 57%, Moderate at around 31% and High at around 12%) which will be addressed using either class weights or SMOTE during the modelling. If the Kurtosis is greater than 1, it means that there are more frequent extreme values than a normal distribution.
 
+**Correlation Analysis: **
+The MetalOxideSensor_Unit4, MetalOxideSensor_Unit2 and C02_ElectroChemicalSensor have the highest linear correlation with the activity level. The C02_InfraredSensor and C02_ElectroChemicalSensor are highly correlated with each other and are redundant for linear models. The humidity has the lowest correlation with the target.
+
 **Bivariate Analysis: **
 The CO2 sensors are the strongest predictors compared to the others as the readings increase with activity level. The Metal Oxide Sensor Units 1 and 3 show a moderate separation across the different activity classes. Ambient Light Level and Time of Day also show clear patterns where High Activity correlates with brighter environments and morning/afternoon periods.
 
