@@ -12,19 +12,26 @@ import os
 import sys
 
 def load_cleaned_data(relative_path: str = 'data/cleaned_gas_monitoring.csv') -> pd.DataFrame:
-    """Loads the cleaned dataset using dynamic absolute paths.
-    Resolving the absolute path prevents 'FileNotFound' errors caused by 
-    differences in how VS Code or Docker sets the system working directory."""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(current_dir, relative_path)
+    # """Loads the cleaned dataset using dynamic absolute paths.
+    # Resolving the absolute path prevents 'FileNotFound' errors caused by 
+    # differences in how VS Code or Docker sets the system working directory."""
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # file_path = os.path.join(current_dir, relative_path)
     
-    print(f"Attempting to load data from:\n  -> {file_path}")
+    # print(f"Attempting to load data from:\n  -> {file_path}")
     
-    if not os.path.exists(file_path):
-        print(f"\n[ERROR] File not found! Looked exactly here: {file_path}")
-        sys.exit(1)
+    # if not os.path.exists(file_path):
+    #     print(f"\n[ERROR] File not found! Looked exactly here: {file_path}")
+    #     sys.exit(1)
+    current_dir = os.path.dirname(os.path.abspath(__file__)) 
+
+    # Construct the absolute path based on the script's location
+    file_path = os.path.join(current_dir, '..', 'data', 'cleaned_gas_monitoring.csv')
+
+    df = pd.read_csv(file_path)
+    # Edited: Used Absolute Path because I cannot find the relative path that works to be used in the ML_draft Notebook.
         
-    return pd.read_csv(file_path)
+    return df
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """Applies advanced feature engineering transformations. 
