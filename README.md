@@ -107,11 +107,15 @@ These features calculate the overall average reading for an entire session then 
 ## 1. Model Pipeline process:
 
 `cd src`
+
 `python ML_load_set_data.py`
+
 `python ML_train_model.py`
 
 > loads, cleans, and uploads feature-engineered data
+
 > generates 3 baseline models (RANDOM FOREST CLASSIFIER, XGBOOST, LOGISTIC REGRESSION), and shows classification report
+
 > loops through a training loop, tunes hyperparameters on RandomisedSearchCV, notes best models and saves all models.
 
 
