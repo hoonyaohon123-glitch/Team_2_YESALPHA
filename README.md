@@ -4,7 +4,22 @@ Hoon Yao Hong - FeatureEngineering.py, run.sh, Dockerfle, docker-compose.yml
 Muhammad Aslam Bin Mohamad Fazli - EDAPython.py, EDAJupyter.ipynb
 Ang Wei Jun - ML_load_set_data.py, ML_train_model.py
 
+Running the ML Pipeline:
 
+Step 1: Prerequisites & Setup
+It is highly recommended to run this project inside the provided VS Code DevContainer to ensure a consistent environment.
+Once your environment is active, open your terminal and install the required Python libraries and run:
+pip3 install -r requirements.txt --break-system-packages
+
+Note: Because the DevContainer uses a managed Linux environment, we include the `--break-system-packages` flag to safely install dependencies directly)
+
+Step 2: Execution Permissions
+Before running the pipeline for the very first time on a new machine, you must grant the shell script permission to execute:
+chmod +x run.sh
+
+Step 3: Run the Pipeline
+To execute the entire workflow, simply run the shell script from the root of the project directory:
+./run.sh
 
 # Instruction for how to run the docker environment:
 ## Step 1: Clone the repository (run in command prompt):
