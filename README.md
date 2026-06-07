@@ -170,4 +170,5 @@ It may seem counterintuitive why we still used a 5 Fold Cross Validation over a 
 ## 5. Balancing Classes
 
 **Using SMOTE (Synthetic Minority Over-sampling Technique).**
+
 SMOTE creates synthetic data (nearest neighbours) to the actual data to balance out all the classes by adding them to a minorty class. It lets a model learn the boundary of each class (i.e, what classifies as a High Activity or Low Activity). 
