@@ -12,7 +12,7 @@ echo "======================================================="
 # ---------------------------------------------------------
 echo "--> [1/2] Executing Data Cleaning Pipeline (EDAPython.py)..."
 #Execute EDAPython.py file
-python EDAPython.py
+python3 src/EDAPython.py
 echo "--> Data cleaning complete. Cleaned CSV generated."
 echo ""
 
@@ -22,7 +22,7 @@ echo ""
 # Note: ML_train_model.py automatically handles the feature engineering in memory before training the models.
 echo "--> [2/2] Executing Model Training Pipeline (ML_train_model.py)..."
 #Execute ML_train_model.py file
-python ML_train_model.py
+python3 src/ML_train_model.py
 
 echo "======================================================="
 echo "  Pipeline Execution Complete!                         "
