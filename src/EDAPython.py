@@ -30,7 +30,7 @@ NUMERIC_COLS = [
 ]
 
 # Setting the default file path
-DB_PATH = 'ProjectData/gas_monitoring.db'
+DB_PATH = 'data/gas_monitoring.db'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
