@@ -1,8 +1,30 @@
 #!/bin/bash
-echo "Starting Docker Environment..."
-docker-compose up -d --build
 
-# To run a specific pipeline file, uncomment the line below:
-# docker-compose exec pipeline python src/main.py
+# Exit immediately if any command fails
+set -e
 
-echo "Environment is up and running!"
+echo "======================================================="
+echo "  Starting Gas Monitoring Machine Learning Pipeline    "
+echo "======================================================="
+
+# ---------------------------------------------------------
+# Phase 1: Data Cleaning & Exploratory Data Analysis
+# ---------------------------------------------------------
+echo "--> [1/2] Executing Data Cleaning Pipeline (EDAPython.py)..."
+#Execute EDAPython.py file
+python EDAPython.py
+echo "--> Data cleaning complete. Cleaned CSV generated."
+echo ""
+
+# ---------------------------------------------------------
+# Phase 2: Feature Engineering & Model Training
+# ---------------------------------------------------------
+# Note: ML_train_model.py automatically handles the feature engineering in memory before training the models.
+echo "--> [2/2] Executing Model Training Pipeline (ML_train_model.py)..."
+#Execute ML_train_model.py file
+python ML_train_model.py
+
+echo "======================================================="
+echo "  Pipeline Execution Complete!                         "
+echo "  Check the 'saved_model' directory for outputs.       "
+echo "======================================================="

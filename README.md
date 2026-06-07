@@ -1,8 +1,8 @@
 Team_2_YESALPHA
 
-**Hoon Yao Hong - FeatureEngineering.py, run.sh, Dockerfle, docker-compose.yml**
-
-**Ang Wei Jun - ML_load_set_data.py, ML_train_model.py**
+Hoon Yao Hong - FeatureEngineering.py, run.sh, Dockerfle, docker-compose.yml
+Muhammad Aslam Bin Mohamad Fazli - EDAPython.py, EDAJupyter.ipynb
+Ang Wei Jun - ML_load_set_data.py, ML_train_model.py
 
 
 
@@ -26,7 +26,28 @@ Team_2_YESALPHA
 ## Step 4.To stop environment (run in command prompt):
 	`docker compose down`
 
+Summary of key Findings:
 
+**Data Quality: ** 
+Four of the columns had missing values of which are humidity (about 19%), MetalOxideSensor_Unit2 (about 14%), Ambient Light Level (about 11%) and CO_GasSensor (about 8%). There were no duplicated rows that was detected and there was a significant amount of label noise found e.g. LowActivity, Low_Activity along with mixed casing. They were all standardised into one canonical form. 
+
+**Physically Impossible Values: **
+Humidity ranged from -49% to 198% where the valid range is between 0% to 100% and CO2_InfraredSensor contained certain negative values and averaged around 109 ppm when the outdoor baseline is around 420 ppm. Some temperatures had also exceeded 100°C which is impossible indoors unless youre being cooked alive. These were identified as synthetic contamination and we fixed them using median imputation.
+
+**Data Cleaning: **
+The activity level and HVAC labels were standardised to one consistent form. All the temperature outliers e.g. 307°C, were replaced with the median, around 20°C as they are physically impossible indoors. Any missing numeric values were imputed with the column median. The Ambient Light Level was filled with the mode. The Negative sensor values in humidity and CO_GasSensor were replaced with the column median as gas concentration cannot be negative (stated above). This is to ensure that the dataset now has zero remaining null values.
+
+**Univariate Analysis: **
+The CO_GasSensor is right-skewed where most readings are low but there are still some occasional high spikes which actually bring the average up. This is where we used the log1p transform as it is recommended before using linear models. CO2 sensors are near-normal therefore there is no transformation needed. Activity Level is imbalanced(Low is around 57%, Moderate at around 31% and High at around 12%) which will be addressed using either class weights or SMOTE during the modelling. If the Kurtosis is greater than 1, it means that there are more frequent extreme values than a normal distribution.
+
+**Correlation Analysis: **
+The MetalOxideSensor_Unit4, MetalOxideSensor_Unit2 and C02_ElectroChemicalSensor have the highest linear correlation with the activity level. The C02_InfraredSensor and C02_ElectroChemicalSensor are highly correlated with each other and are redundant for linear models. The humidity has the lowest correlation with the target.
+
+**Bivariate Analysis: **
+The CO2 sensors are the strongest predictors compared to the others as the readings increase with activity level. The Metal Oxide Sensor Units 1 and 3 show a moderate separation across the different activity classes. Ambient Light Level and Time of Day also show clear patterns where High Activity correlates with brighter environments and morning/afternoon periods.
+
+**Session Analysis: **
+The sessions vary in length where some have only a handful of readings while others have dozens. Most of the sessions are dominated by Low Activity readings which is consistent with the overall class distribution. The CO2 levels also vary across sessions reflecting the different residents or monitoring periods. The Session ID should not be used as a predictive feature but is useful for grouped cross-validation to prevent data leakage.
 
 # Feature Engineering(How and why):
 
@@ -118,5 +139,3 @@ The .py files runs in sequence using functions and Object-Oriented Programming t
 
 	**Using SMOTE (Synthetic Minority Over-sampling Technique).**
 		SMOTE creates synthetic data (nearest neighbours) to the actual data to balance out all the classes by adding them to a minorty class. It lets a model learn the boundary of each class (i.e, what classifies as a High Activity or Low Activity). 
-
-
