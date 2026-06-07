@@ -6,17 +6,18 @@ from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
 from sklearn.metrics import classification_report, f1_score
 
-from FeatureEngineering import engineer_features, load_cleaned_data
+from FeatureEngineering import engineer_features, load_cleaned_data # importing functions from feature engineering script
 
 def run_data_pipeline():
+    # First function to be ran.
     print(f"Loading data")
     df = load_cleaned_data()
     print(f"Engineering features")
     engineered_df = engineer_features(df)
     print("Dropping unnecessary columns and preparing target variable...")
 
-    X = engineered_df.drop(columns=['Target_Activity', 'Session ID']) # both will not be used in training
-    y = engineered_df['Target_Activity'] # target variable for classification
+    X = engineered_df.drop(columns=['Target_Activity', 'Session ID']) # both will not be used in training, hence dropped/
+    y = engineered_df['Target_Activity'] # target variable for classification, hence separated out as y.
     return X, y
 
 # Once the data is loaded and features are engineered, we proceed to split and scale the data for model training in the next part.
@@ -25,8 +26,8 @@ def split_data(X: pd.DataFrame, y: pd.Series, test_size=0.2, random_state=42):
     # Splitting the data into training and testing sets with stratification to maintain class balance.
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
+        #stratify y ensures that the target variable is distributed across the train and test sets in the same way as in the original dataset, which is important for classification tasks to prevent bias.
     )
-
     return X_train, X_test, y_train, y_test
 
 

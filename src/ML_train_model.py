@@ -8,7 +8,6 @@ from imblearn.over_sampling import SMOTE
 
 import json
 import os # for saving model and params with dynamic paths
-from sklearn.pipeline import Pipeline
 import joblib
 
 from ML_load_set_data import get_data_for_training
@@ -55,8 +54,9 @@ def evaluate_baseline_models(X_train, X_test, y_train, y_test):
 def run_training_pipeline_tuned(X_train, X_test, y_train, y_test):
     print("Running the training pipeline with tuned hyperparameters...")
     print("Applying class balancing technique using SMOTE")
+    # SMOTE is used to artficially balance the training data
     smote = SMOTE(random_state=42)
-    X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+    X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train) # resampling data to new balanced dataset
     print("SMOTE balancing applied to training data.")
     
     # Training loop for RandomisedSearchCV with all the same models as before, but with tuned hyperparameters.
@@ -125,17 +125,19 @@ def run_training_pipeline_tuned(X_train, X_test, y_train, y_test):
         PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         SAVED_MODELS_DIR = os.path.join(PROJECT_ROOT, 'saved_model')
         BEST_PARAMS_DIR = os.path.join(PROJECT_ROOT, 'saved_model')
+        # Checking for params and model directories, and creating them if they don't exist
+
+        os.makedirs(SAVED_MODELS_DIR, exist_ok=True)
+        os.makedirs(BEST_PARAMS_DIR, exist_ok=True)
 
 
-        if not os.path.exists(SAVED_MODELS_DIR):
-            os.makedirs(SAVED_MODELS_DIR)
-        if not os.path.exists(BEST_PARAMS_DIR):
-            os.makedirs(BEST_PARAMS_DIR)
         model_filename = f"{name.replace(' ', '_')}_best_model.pkl"
         params_filename = f"{name.replace(' ', '_')}_best_params.json"
+
         joblib.dump(best_estimator, os.path.join(SAVED_MODELS_DIR, model_filename))
         with open(os.path.join(BEST_PARAMS_DIR, params_filename), 'w') as f:
             json.dump(best_params, f, indent=4)
+
         print(f"Saved best model for {name} to {os.path.join(SAVED_MODELS_DIR, model_filename)}")
         print(f"Saved best hyperparameters for {name} to {os.path.join(BEST_PARAMS_DIR, params_filename)}")
 
@@ -154,5 +156,4 @@ if __name__ == "__main__":
     print("\n\n")
     print("TUNED models & Classification Report:")
     run_training_pipeline_tuned(X_train_scaled, X_test_scaled, y_train, y_test)
-
-    # Show best params and features
+    print("Saved all tuned models and their best hyperparameters. Training pipeline complete.")
