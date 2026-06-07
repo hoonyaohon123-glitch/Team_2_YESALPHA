@@ -9,22 +9,26 @@
 ## Step 1: Prerequisites & Setup
 It is highly recommended to run this project inside the provided VS Code DevContainer to ensure a consistent environment.
 Once your environment is active, open your terminal and install the required Python libraries and run:
+
 `pip3 install -r requirements.txt --break-system-packages`
 
 > Note: Because the DevContainer uses a managed Linux environment, we include the `--break-system-packages` flag to safely install dependencies directly)
 
 ## Step 2: Execution Permissions
 Before running the pipeline for the very first time on a new machine, you must grant the shell script permission to execute:
+
 `chmod +x run.sh`
 
 ## Step 3: Run the Pipeline
 To execute the entire workflow, simply run the shell script from the root of the project directory:
+
 `./run.sh`
 
 # Instruction for how to run the docker environment:
 
 ## Step 1: Clone the repository (run in command prompt):
 `git clone https://github.com/hoonyaohon123-glitch/Team_2_YESALPHA/tree/main`
+
 `cd Team_2_YESALPHA`
 
 ## Step 2:Build the container (run in command prompt):
@@ -151,10 +155,10 @@ Using these pros and cons, the python file will loop through each model and prin
 
 ## 4. Tuning Strategy
 a. **RandomizedSearchCV**
+
 b. **5-Fold Cross Validation**
 
 We utilised RandomizedSearchCV, instead of GridSearchCV, with 5-fold Cross Validation method.
-
 
 A 5 Fold CV is used because, while it takes a longer time to compute, a 3 Fold CV is prone to bias since our data is already imbalanced, it may be biased since it only checks through 33% of the data.
 
@@ -165,4 +169,4 @@ It may seem counterintuitive why we still used a 5 Fold Cross Validation over a 
 ## 5. Balancing Classes
 
 **Using SMOTE (Synthetic Minority Over-sampling Technique).**
-	SMOTE creates synthetic data (nearest neighbours) to the actual data to balance out all the classes by adding them to a minorty class. It lets a model learn the boundary of each class (i.e, what classifies as a High Activity or Low Activity). 
+SMOTE creates synthetic data (nearest neighbours) to the actual data to balance out all the classes by adding them to a minorty class. It lets a model learn the boundary of each class (i.e, what classifies as a High Activity or Low Activity). 
