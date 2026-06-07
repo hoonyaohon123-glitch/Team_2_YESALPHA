@@ -279,7 +279,7 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
     for i, col in enumerate(NUMERIC_COLS):
         ax = axes[i]
         sns.histplot(df[col], bins=50, kde=True, ax=ax, color='#4C72B0', alpha=0.7)
-        ax.set_title(f'C{i+1} - {col}', fontsize=11, fontweight='bold')
+        ax.set_title(f'Graph {i+1} - {col}', fontsize=11, fontweight='bold')
         ax.set_xlabel('')
         skew_val = df[col].skew()
         kurt_val = df[col].kurt()
@@ -299,7 +299,7 @@ def univariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         ax = axes[i]
         vc = df[col].value_counts()
         vc.plot(kind='bar', ax=ax, color=sns.color_palette('muted', len(vc)), edgecolor='white')
-        ax.set_title(f'C{i+10} - {col}', fontweight='bold')
+        ax.set_title(f'Graph {i+10} - {col}', fontweight='bold')
         ax.set_xlabel('')
         ax.tick_params(axis='x', rotation=30)
         for p in ax.patches:
@@ -337,7 +337,7 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
             palette=PALETTE, ax=axes[i], width=0.5,
             flierprops=dict(marker='o', markersize=2, alpha=0.3),
         )
-        axes[i].set_title(col, fontweight='bold', fontsize=10)
+        axes[i].set_title(f'Graph {i+14} - {col}', fontweight='bold', fontsize=10)        
         axes[i].set_xlabel('')
         axes[i].tick_params(axis='x', rotation=15)
     plt.suptitle('Sensor Readings by Activity Level', fontsize=14, fontweight='bold', y=1.01)
@@ -351,7 +351,7 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
             data=df, x='Activity Level', y=col, order=ACTIVITY_ORDER,
             palette=PALETTE, ax=axes[i], inner='quartile',
         )
-        axes[i].set_title(f'{col} by Activity Level', fontweight='bold')
+        axes[i].set_title(f'Graph {i+23} - {col} by Activity Level', fontweight='bold')
         axes[i].set_xlabel('')
     plt.suptitle('CO2 Sensor Distributions by Activity Level', fontsize=13, fontweight='bold')
     plt.tight_layout()
@@ -365,7 +365,7 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
         ct = ct[[c for c in ACTIVITY_ORDER if c in ct.columns]]
         ct.plot(kind='bar', stacked=True, ax=axes[i],
                 color=[PALETTE[c] for c in ct.columns], edgecolor='white', width=0.7)
-        axes[i].set_title(f'{col} vs Activity Level', fontweight='bold')
+        axes[i].set_title(f'Graph {i+25} - {col} vs Activity Level', fontweight='bold')
         axes[i].set_ylabel('% of rows')
         axes[i].set_xlabel('')
         axes[i].tick_params(axis='x', rotation=35)
@@ -377,8 +377,6 @@ def bivariate_analysis(df: pd.DataFrame) -> pd.DataFrame:
 
     # Group means table
     group_means = df.groupby('Activity Level')[NUMERIC_COLS].mean().round(2)
-    print('\nGroup means by Activity Level:')
-    print(group_means.loc[[a for a in ACTIVITY_ORDER if a in group_means.index]].to_string())
 
     return group_means.loc[[a for a in ACTIVITY_ORDER if a in group_means.index]]
 
@@ -411,7 +409,7 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
         center=0, vmin=-1, vmax=1, ax=ax,
         linewidths=0.5, annot_kws={'size': 9},
     )
-    ax.set_title('Pearson Correlation Matrix (Numeric Features + Encoded Target)',
+    ax.set_title('Graph 28 - Pearson Correlation Matrix (Numeric Features + Encoded Target)',
                  fontweight='bold', pad=15)
     plt.tight_layout()
     plt.show()
@@ -420,7 +418,7 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
     target_corr = corr_matrix['Activity_Encoded'].drop('Activity_Encoded').abs().sort_values(ascending=False)
     fig, ax = plt.subplots(figsize=(9, 5))
     target_corr.plot(kind='bar', ax=ax, color=sns.color_palette('Blues_r', len(target_corr)))
-    ax.set_title('Feature Correlation with Activity Level (absolute Pearson r)', fontweight='bold')
+    ax.set_title('Graph 29 - Feature Correlation with Activity Level (absolute Pearson r)', fontweight='bold')
     ax.set_ylabel('|Pearson r|')
     ax.set_xlabel('')
     ax.tick_params(axis='x', rotation=35)
@@ -430,9 +428,6 @@ def correlation_analysis(df: pd.DataFrame) -> pd.Series:
                     ha='center', fontsize=9)
     plt.tight_layout()
     plt.show()
-
-    print('\nFeature correlations with target (ranked):')
-    print(target_corr.to_string())
 
     return target_corr
 
@@ -470,12 +465,12 @@ def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
     # Plots
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     session_stats['rows'].plot(kind='hist', bins=30, ax=axes[0], color='#4C72B0', edgecolor='white')
-    axes[0].set_title('Distribution of Rows per Session', fontweight='bold')
+    axes[0].set_title('Graph 30 - Distribution of Rows per Session', fontweight='bold')
     axes[0].set_xlabel('Number of rows')
 
     axes[1].scatter(session_stats['Session ID'], session_stats['avg_co2'],
                     alpha=0.5, s=15, color='#DD8452')
-    axes[1].set_title('Mean CO2 (ElectroChemical) per Session', fontweight='bold')
+    axes[1].set_title('Graph 31 - Mean CO2 (ElectroChemical) per Session', fontweight='bold')
     axes[1].set_xlabel('Session ID')
     axes[1].set_ylabel('Mean CO2 (ppm)')
     plt.tight_layout()
@@ -496,7 +491,7 @@ def session_analysis(df: pd.DataFrame) -> pd.DataFrame:
         color=[PALETTE[c] for c in ACTIVITY_ORDER if c in act_pct.columns],
         edgecolor='white',
     )
-    ax.set_title('Activity Level Distribution across Sessions (top 20)', fontweight='bold')
+    ax.set_title('Graph 32 - Activity Level Distribution across Sessions (top 20)', fontweight='bold')
     ax.set_xlabel('Session ID')
     ax.set_ylabel('% of readings')
     ax.tick_params(axis='x', rotation=45)
