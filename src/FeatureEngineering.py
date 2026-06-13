@@ -42,7 +42,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     # -------------------------------------------------------------------------
     # 1. Temporal Dynamics
     # -------------------------------------------------------------------------
-    # Captures the immediate change from one second to the next.
+    # Captures the immediate change from one reading to the next.
     print(" -> Calculating temporal dynamics...")
 
     # Calculate how much CO2 changed compared to the exact previous reading.
